@@ -1045,7 +1045,7 @@ function quietRefresh(){
   google.script.run.withSuccessHandler(function(data){
     quietRefreshing=false;
     if(!data||anyPopupOpen())return;
-    appData=data;lastDataLoad=Date.now();lastTodayKey=newToday;
+    appData=data;lastDataLoad=Date.now();lastTodayKey=newToday;saveAppData(data);showingSavedData=false;
     overviewBookingCache={};teacherBookingCache={};
     primeWeekCache(data.overviewWeekStart||getWeekStartDateKeyClient(newToday),Array.isArray(data.bookings)?data.bookings:[]);
     if(selectedOverviewDate===oldToday)selectedOverviewDate=newToday;   // a new school day has started
@@ -1582,19 +1582,50 @@ document.addEventListener('DOMContentLoaded',function(){applyThemeLabel();tagPag
 
 window.onload=function(){selectedOverviewDate=getSingaporeDateKey(0);lastTodayKey=selectedOverviewDate;selectedTeacherId=readSavedTeacher();loadData();};
 
+/* ---------- Instant start ----------
+   The last data loaded is saved on this device. Next time the app opens it shows
+   that straight away, then quietly fetches the latest from the sheet and redraws.
+   Bookings, edits and cancels always check the live sheet, so nothing is saved
+   from old data. The saved copy is only used for the same school week. */
+const SAVED_DATA_KEY='peVms.savedData.v1';
+const SAVED_DATA_MAX_AGE=4*24*60*60*1000;
+let showingSavedData=false;
+function saveAppData(data){try{localStorage.setItem(SAVED_DATA_KEY,JSON.stringify({t:Date.now(),data:data}));}catch(e){}}
+function readSavedAppData(){
+  try{
+    const x=JSON.parse(localStorage.getItem(SAVED_DATA_KEY)||'null');
+    if(!x||!x.data||!x.t||Date.now()-x.t>SAVED_DATA_MAX_AGE)return null;
+    const week=getWeekStartDateKeyClient(getSingaporeDateKey(0));
+    if(x.data.overviewWeekStart&&getWeekStartDateKeyClient(x.data.overviewWeekStart)!==week)return null;
+    return x.data;
+  }catch(e){return null;}
+}
+function applyAppData(data,fromSaved){
+  appData=data;lastDataLoad=fromSaved?0:Date.now();showingSavedData=!!fromSaved;
+  overviewBookingCache={};
+  if(!fromSaved)teacherBookingCache={};
+  primeWeekCache(data.overviewWeekStart||getWeekStartDateKeyClient(getSingaporeDateKey(0)),Array.isArray(data.bookings)?data.bookings:[]);
+  updateUserInfo();populateTeachers();renderOverview();renderTimetable();
+  if(!fromSaved)loadAir();
+  if(!selectedTeacherId)renderBookings();
+  else if(fromSaved){const c=document.getElementById('bookings');if(c)c.innerHTML=skeletonHtml('cards');}
+  else loadTeacherBookings(true,false);
+}
+
 function loadData(){
-  clearMessage();setLoadingState();
+  clearMessage();
+  const saved=readSavedAppData();
+  if(saved){try{applyAppData(saved,true);}catch(e){showingSavedData=false;setLoadingState();}}
+  else setLoadingState();
   google.script.run.withSuccessHandler(function(data){
     try{
       if(!data)throw new Error('The system returned no data.');
-      appData=data;lastDataLoad=Date.now();
-      overviewBookingCache={};
-      teacherBookingCache={};
-      primeWeekCache(data.overviewWeekStart||getWeekStartDateKeyClient(getSingaporeDateKey(0)),Array.isArray(data.bookings)?data.bookings:[]);
-      updateUserInfo();populateTeachers();renderOverview();renderTimetable();loadAir();
-      if(selectedTeacherId){loadTeacherBookings(false);}else{renderBookings();}
+      applyAppData(data,false);saveAppData(data);
     }catch(e){showError('The data was received, but the page could not display it.\n\n'+e.message);}
-  }).withFailureHandler(function(e){showError('Unable to load the PE booking data.\n\n'+(e&&e.message?e.message:String(e)));}).getAppData();
+  }).withFailureHandler(function(e){
+    if(showingSavedData){showError('Showing the last saved data. PE VMS could not get the latest just now — pull down or reopen the app to try again.');return;}
+    showError('Unable to load the PE booking data.\n\n'+(e&&e.message?e.message:String(e)));
+  }).getAppData();
 }
 
 function setLoadingState(){

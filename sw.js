@@ -1,8 +1,8 @@
-// PE VMS service worker (version b38a9a2e).
+// PE VMS service worker (version 1806f9e8).
 // Same-site files load from the network first, so updates show at once;
 // the saved copy is used only when the phone is offline.
 // Bookings and air quality go to Google and NEA and are never cached here.
-const CACHE = 'pevms-b38a9a2e';
+const CACHE = 'pevms-1806f9e8';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 self.addEventListener('install', e => {
